@@ -10,10 +10,12 @@ export const borrowsApi = {
   },
 
   // Get my borrows (borrower)
+  // Get my borrows (borrower)
+  // Get my borrows (borrower)
   getMyBorrows: async (params = {}) => {
     const query = new URLSearchParams(params).toString();
     const url = `${ENDPOINTS.BORROWS.MY_BORROWS}${query ? `?${query}` : ""}`;
-    return apiRequest(url);
+    return apiRequest(url); // Return langsung, tanpa modifikasi!
   },
 
   // Get borrow by ID

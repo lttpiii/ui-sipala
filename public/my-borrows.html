@@ -118,25 +118,68 @@
           const response = await borrowsApi.getMyBorrows({
             page,
             limit: UI.PAGINATION.DEFAULT_LIMIT,
-            status: status || undefined,
+            status: status,
           });
 
-          const borrows = response.result?.data?.data || [];
-          const metadata = response.result?.data?.metadata;
+          console.log("API Response:", response); // Debug log
+
+          // Fix: Data langsung di response.result.data, bukan response.result.data.data
+          const borrows = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          console.log("Borrows:", borrows); // Debug log
+          console.log("Metadata:", metadata); // Debug log
 
           renderTable(borrows);
-          document.getElementById("pagination").innerHTML = Pagination.render(
-            metadata,
-            loadBorrows,
-          );
-          Pagination.init(loadBorrows);
+
+          // Render pagination jika ada metadata
+          if (metadata) {
+            document.getElementById("pagination").innerHTML = Pagination.render(
+              metadata,
+              loadBorrows,
+            );
+            Pagination.init(loadBorrows);
+          } else {
+            document.getElementById("pagination").innerHTML = "";
+          }
         } catch (error) {
+          console.error("Error loading borrows:", error);
           toast.error("Failed to load borrows");
         }
       }
 
+      // Tambahkan di awal script setelah imports
+      window.debugAPI = async () => {
+        try {
+          const response = await borrowsApi.getMyBorrows({ limit: 10 });
+          console.log("Full API Response:", response);
+          console.log("Result:", response.result);
+          console.log("Data:", response.result?.data);
+          console.log("Is Array:", Array.isArray(response.result?.data));
+        } catch (error) {
+          console.error("Debug error:", error);
+        }
+      };
+
+      // Panggil otomatis saat load
+      setTimeout(window.debugAPI, 1000);
+
       function renderTable(borrows) {
         const container = document.getElementById("borrows-table");
+
+        // Safety check
+        if (!borrows || !Array.isArray(borrows) || borrows.length === 0) {
+          container.innerHTML = `
+            <div class="text-center py-12 text-gray-500">
+                <i class="fas fa-inbox text-4xl mb-4 text-gray-300"></i>
+                <p>No borrow records found</p>
+                <a href="/borrows.html" class="btn-primary mt-4 inline-block">
+                    Create New Borrow
+                </a>
+            </div>
+        `;
+          return;
+        }
 
         container.innerHTML = Table.render({
           headers: [
@@ -156,34 +199,46 @@
               render: (date, row) => {
                 const isOverdue = row.is_overdue;
                 return `
-                                <span class="${isOverdue ? "text-red-600 font-medium" : ""}">
-                                    ${formatDate(date)}
-                                    ${isOverdue ? " (Overdue)" : ""}
-                                </span>
-                            `;
+                        <span class="${isOverdue ? "text-red-600 font-medium" : ""}">
+                            ${formatDate(date)}
+                            ${isOverdue ? " (Overdue)" : ""}
+                        </span>
+                    `;
               },
             },
             {
               key: "status",
               label: "Status",
-              render: (status) => `
-                            <span class="status-badge ${UI.BORROW_STATUS[status?.toUpperCase()]?.class || ""}">
-                                ${UI.BORROW_STATUS[status?.toUpperCase()]?.label || status}
-                            </span>
-                        `,
+              render: (status) => {
+                const statusKey = status?.toUpperCase();
+                const statusConfig = UI.BORROW_STATUS[statusKey] || {
+                  label: status || "Unknown",
+                  class: "bg-gray-100 text-gray-800",
+                };
+                return `
+                        <span class="status-badge ${statusConfig.class}">
+                            ${statusConfig.label}
+                        </span>
+                    `;
+              },
             },
             {
               key: "total_items",
               label: "Items",
               class: "text-center",
             },
+            {
+              key: "total_quantity",
+              label: "Qty",
+              class: "text-center",
+            },
           ],
           rows: borrows,
           actions: (borrow) => `
-                    <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
-                        <i class="fas fa-eye"></i> View
-                    </button>
-                `,
+            <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
+                <i class="fas fa-eye"></i> View
+            </button>
+        `,
         });
       }
 

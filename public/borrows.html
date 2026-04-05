@@ -180,7 +180,9 @@
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
         try {
-          const response = await borrowsApi.create({ due_date: dueDate });
+          const formattedDate = new Date(dueDate).toISOString();
+
+          const response = await borrowsApi.create({ due_date: formattedDate });
 
           if (response.code === 201) {
             currentBorrowId = response.result.id;
@@ -227,6 +229,7 @@
         }
 
         try {
+          // Add item ke server
           const response = await borrowsApi.addItem(currentBorrowId, {
             tool_id: toolId,
             quantity: quantity,
@@ -235,18 +238,8 @@
           if (response.code === 201) {
             toast.success("Item added");
 
-            // Add to local items
-            const toolName =
-              toolSelect.options[toolSelect.selectedIndex].dataset.name;
-            currentItems.push({
-              id: response.result.id,
-              tool_id: toolId,
-              tool_name: toolName,
-              quantity: quantity,
-            });
-
-            renderItems();
-            updateSummary();
+            // Fetch ulang data borrow untuk dapat list items terbaru
+            await refreshBorrowItems();
 
             // Reset inputs
             toolSelect.value = "";
@@ -258,6 +251,28 @@
           toast.error(error.message || "Network error");
         }
       };
+
+      // Fungsi baru untuk refresh items
+      async function refreshBorrowItems() {
+        try {
+          const response = await borrowsApi.getById(currentBorrowId);
+          const borrow = response.result;
+
+          // Update local items dari server
+          currentItems =
+            borrow.items?.map((item) => ({
+              id: item.id,
+              tool_id: item.tool_id,
+              tool_name: item.tool_name,
+              quantity: item.quantity,
+            })) || [];
+
+          renderItems();
+          updateSummary();
+        } catch (error) {
+          console.error("Failed to refresh items:", error);
+        }
+      }
 
       window.removeItem = async (itemId) => {
         try {

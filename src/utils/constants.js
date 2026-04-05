@@ -40,7 +40,7 @@ export const ENDPOINTS = {
     LIST: "/api/borrows/v1/borrows",
     CREATE: "/api/borrows/v1/borrows",
     BY_ID: (id) => `/api/borrows/v1/borrows/${id}`,
-    MY_BORROWS: "/api/borrows/v1/my-borrows",
+    MY_BORROWS: "/api/borrows/v1/borrows/my-borrows",
     ADD_ITEM: (id) => `/api/borrows/v1/borrows/${id}/items`,
     REMOVE_ITEM: (borrowId, itemId) =>
       `/api/borrows/v1/borrows/${borrowId}/items/${itemId}`,

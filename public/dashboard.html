@@ -109,23 +109,38 @@
               borrowsApi.getAll({ limit: 1 }),
             ]);
 
+            // Fix: Ambil data dari struktur response yang benar
+            const usersTotal =
+              usersRes.result?.metadata?.total_records ||
+              (Array.isArray(usersRes.result) ? usersRes.result.length : 0);
+            const toolsTotal =
+              toolsRes.result?.metadata?.total_records ||
+              (Array.isArray(toolsRes.result?.data)
+                ? toolsRes.result.data.length
+                : 0);
+            const borrowsTotal =
+              borrowsRes.result?.metadata?.total_records ||
+              (Array.isArray(borrowsRes.result?.data)
+                ? borrowsRes.result.data.length
+                : 0);
+
             const stats = [
               {
                 icon: "fa-users",
                 label: "Total Users",
-                value: usersRes.result?.metadata?.total_records || 0,
+                value: usersTotal,
                 color: "bg-purple-500",
               },
               {
                 icon: "fa-tools",
                 label: "Total Tools",
-                value: toolsRes.result?.metadata?.total_records || 0,
+                value: toolsTotal,
                 color: "bg-blue-500",
               },
               {
                 icon: "fa-clipboard-list",
                 label: "Total Borrows",
-                value: borrowsRes.result?.metadata?.total_records || 0,
+                value: borrowsTotal,
                 color: "bg-green-500",
               },
               {
@@ -139,16 +154,16 @@
             container.innerHTML = stats
               .map(
                 (stat) => `
-                        <div class="card flex items-center gap-4">
-                            <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
-                                <i class="fas ${stat.icon} text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
-                                <p class="text-sm text-gray-600">${stat.label}</p>
-                            </div>
-                        </div>
-                    `,
+                <div class="card flex items-center gap-4">
+                    <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
+                        <i class="fas ${stat.icon} text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
+                        <p class="text-sm text-gray-600">${stat.label}</p>
+                    </div>
+                </div>
+            `,
               )
               .join("");
           } catch (error) {
@@ -158,8 +173,38 @@
           // Borrower stats
           try {
             const myBorrowsRes = await borrowsApi.getMyBorrows({ limit: 1 });
-            const total =
-              myBorrowsRes.result?.data?.metadata?.total_records || 0;
+
+            // Fix: Ambil data dari struktur response yang benar
+            let total = 0;
+            let approvedCount = 0;
+            let pendingCount = 0;
+            let overdueCount = 0;
+
+            const result = myBorrowsRes.result;
+
+            if (result) {
+              if (Array.isArray(result)) {
+                total = result.length;
+                approvedCount = result.filter(
+                  (b) => b.status === "approved",
+                ).length;
+                pendingCount = result.filter(
+                  (b) => b.status === "pending",
+                ).length;
+                overdueCount = result.filter((b) => b.is_overdue).length;
+              } else if (result.data && Array.isArray(result.data)) {
+                total = result.data.length;
+                approvedCount = result.data.filter(
+                  (b) => b.status === "approved",
+                ).length;
+                pendingCount = result.data.filter(
+                  (b) => b.status === "pending",
+                ).length;
+                overdueCount = result.data.filter((b) => b.is_overdue).length;
+              } else if (result.metadata) {
+                total = result.metadata.total_records || 0;
+              }
+            }
 
             const stats = [
               {
@@ -171,19 +216,19 @@
               {
                 icon: "fa-check-circle",
                 label: "Approved",
-                value: 0,
+                value: approvedCount,
                 color: "bg-green-500",
               },
               {
                 icon: "fa-clock",
                 label: "Pending",
-                value: 0,
+                value: pendingCount,
                 color: "bg-yellow-500",
               },
               {
                 icon: "fa-exclamation-circle",
                 label: "Overdue",
-                value: 0,
+                value: overdueCount,
                 color: "bg-red-500",
               },
             ];
@@ -191,16 +236,16 @@
             container.innerHTML = stats
               .map(
                 (stat) => `
-                        <div class="card flex items-center gap-4">
-                            <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
-                                <i class="fas ${stat.icon} text-xl"></i>
-                            </div>
-                            <div>
-                                <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
-                                <p class="text-sm text-gray-600">${stat.label}</p>
-                            </div>
-                        </div>
-                    `,
+                <div class="card flex items-center gap-4">
+                    <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
+                        <i class="fas ${stat.icon} text-xl"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
+                        <p class="text-sm text-gray-600">${stat.label}</p>
+                    </div>
+                </div>
+            `,
               )
               .join("");
           } catch (error) {
@@ -220,7 +265,8 @@
             response = await borrowsApi.getAll({ limit: 5 });
           }
 
-          const borrows = response.result?.data?.data || [];
+          // Fix: Extract data dengan helper function
+          const borrows = extractDataFromResponse(response);
 
           if (borrows.length === 0) {
             container.innerHTML =
@@ -229,30 +275,59 @@
           }
 
           container.innerHTML = `
-                    <div class="space-y-3">
-                        ${borrows
-                          .map(
-                            (borrow) => `
-                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                <div>
-                                    <p class="font-medium text-gray-900">
-                                        ${isBorrower() ? `Borrow #${borrow.id?.slice(0, 8)}` : borrow.borrower?.name || "Unknown"}
-                                    </p>
-                                    <p class="text-sm text-gray-600">${formatDate(borrow.borrow_date)}</p>
-                                </div>
-                                <span class="status-badge ${UI.BORROW_STATUS[borrow.status?.toUpperCase()]?.class || "bg-gray-100 text-gray-800"}">
-                                    ${borrow.status || "Unknown"}
-                                </span>
-                            </div>
-                        `,
-                          )
-                          .join("")}
+            <div class="space-y-3">
+                ${borrows
+                  .map(
+                    (borrow) => `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                            <p class="font-medium text-gray-900">
+                                ${isBorrower() ? `Borrow #${borrow.id?.slice(0, 8)}` : borrow.borrower?.name || "Unknown"}
+                            </p>
+                            <p class="text-sm text-gray-600">${formatDate(borrow.borrow_date)}</p>
+                        </div>
+                        <span class="status-badge ${UI.BORROW_STATUS[borrow.status?.toUpperCase()]?.class || "bg-gray-100 text-gray-800"}">
+                            ${borrow.status || "Unknown"}
+                        </span>
                     </div>
-                `;
+                `,
+                  )
+                  .join("")}
+            </div>
+        `;
         } catch (error) {
+          console.error("Recent borrows error:", error);
           container.innerHTML =
             '<p class="text-red-500 text-center py-8">Failed to load data</p>';
         }
+      }
+
+      // Helper function untuk extract data dari berbagai format response
+      function extractDataFromResponse(response) {
+        if (!response || !response.result) return [];
+
+        const result = response.result;
+
+        // Format 1: result langsung array
+        if (Array.isArray(result)) {
+          return result;
+        }
+
+        // Format 2: result.data adalah array
+        if (result.data && Array.isArray(result.data)) {
+          return result.data;
+        }
+
+        // Format 3: result.data.data (double nested - bug sebelumnya)
+        if (
+          result.data &&
+          result.data.data &&
+          Array.isArray(result.data.data)
+        ) {
+          return result.data.data;
+        }
+
+        return [];
       }
 
       function loadQuickActions() {
