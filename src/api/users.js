@@ -3,7 +3,13 @@ import { apiRequest } from "../utils/auth.js";
 
 export const usersApi = {
   getAll: async (params = {}) => {
-    const query = new URLSearchParams(params).toString();
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(
+        ([_, value]) => value !== undefined && value !== null && value !== "",
+      ),
+    );
+
+    const query = new URLSearchParams(cleanParams).toString();
     const url = `${ENDPOINTS.USERS.LIST}${query ? `?${query}` : ""}`;
     return apiRequest(url);
   },
