@@ -136,8 +136,9 @@
               render: (id) => `#${id?.slice(0, 8)}`,
             },
             {
-              key: "borrower_name",
+              key: "borrow_details",
               label: "Borrower",
+              render: (borrowDetails) => borrowDetails?.borrower_name || "-",
             },
             {
               key: "returned_at",
