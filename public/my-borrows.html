@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Borrows - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">My Borrows</h1>
+            <p class="text-gray-600">View your borrowing history</p>
+          </div>
+          <a href="./borrows.html" class="btn-primary flex items-center gap-2">
+            <i class="fas fa-plus"></i>
+            <span>New Borrow</span>
+          </a>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+          <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+              <select id="status-filter" class="form-input">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="returned">Returned</option>
+              </select>
+            </div>
+            <button onclick="loadBorrows()" class="btn-secondary">
+              <i class="fas fa-filter"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+          <div id="borrows-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Detail Modal -->
+    <div
+      id="detail-modal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div
+          class="p-6 border-b border-gray-200 flex justify-between items-center"
+        >
+          <h3 class="text-lg font-semibold">Borrow Details</h3>
+          <button
+            onclick="closeModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div id="modal-content" class="p-6">
+          <!-- Content loaded dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import { checkAuth } from "../src/utils/auth.js";
+      import { borrowsApi } from "../src/api/borrows.js";
+      import { toast } from "../src/components/Toast.js";
+      import {
+        UI,
+        formatDate,
+        formatDateTime,
+      } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth()) {
+        window.location.href = "./login.html";
+        throw new Error("Not authenticated");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      let currentPage = 1;
+
+      async function loadBorrows(page = 1) {
+        currentPage = page;
+        const status = document.getElementById("status-filter").value;
+
+        try {
+          const response = await borrowsApi.getMyBorrows({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+            status: status || undefined,
+          });
+
+          const borrows = response.result?.data?.data || [];
+          const metadata = response.result?.data?.metadata;
+
+          renderTable(borrows);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadBorrows,
+          );
+          Pagination.init(loadBorrows);
+        } catch (error) {
+          toast.error("Failed to load borrows");
+        }
+      }
+
+      function renderTable(borrows) {
+        const container = document.getElementById("borrows-table");
+
+        container.innerHTML = Table.render({
+          headers: [
+            {
+              key: "id",
+              label: "Borrow ID",
+              render: (id) => `#${id?.slice(0, 8)}`,
+            },
+            {
+              key: "borrow_date",
+              label: "Borrow Date",
+              render: (date) => formatDate(date),
+            },
+            {
+              key: "due_date",
+              label: "Due Date",
+              render: (date, row) => {
+                const isOverdue = row.is_overdue;
+                return `
+                                <span class="${isOverdue ? "text-red-600 font-medium" : ""}">
+                                    ${formatDate(date)}
+                                    ${isOverdue ? " (Overdue)" : ""}
+                                </span>
+                            `;
+              },
+            },
+            {
+              key: "status",
+              label: "Status",
+              render: (status) => `
+                            <span class="status-badge ${UI.BORROW_STATUS[status?.toUpperCase()]?.class || ""}">
+                                ${UI.BORROW_STATUS[status?.toUpperCase()]?.label || status}
+                            </span>
+                        `,
+            },
+            {
+              key: "total_items",
+              label: "Items",
+              class: "text-center",
+            },
+          ],
+          rows: borrows,
+          actions: (borrow) => `
+                    <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
+                        <i class="fas fa-eye"></i> View
+                    </button>
+                `,
+        });
+      }
+
+      window.viewDetails = async (id) => {
+        try {
+          const response = await borrowsApi.getById(id);
+          const borrow = response.result;
+
+          const modal = document.getElementById("detail-modal");
+          const content = document.getElementById("modal-content");
+
+          content.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <p class="text-gray-600">Borrow ID</p>
+                                <p class="font-medium">#${borrow.id}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Status</p>
+                                <span class="status-badge ${UI.BORROW_STATUS[borrow.status?.toUpperCase()]?.class || ""}">
+                                    ${borrow.status}
+                                </span>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Borrow Date</p>
+                                <p class="font-medium">${formatDateTime(borrow.borrow_date)}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Due Date</p>
+                                <p class="font-medium">${formatDateTime(borrow.due_date)}</p>
+                            </div>
+                        </div>
+
+                        <div class="border-t pt-4">
+                            <h4 class="font-medium mb-2">Items</h4>
+                            <div class="space-y-2">
+                                ${
+                                  borrow.items
+                                    ?.map(
+                                      (item) => `
+                                    <div class="flex justify-between p-2 bg-gray-50 rounded">
+                                        <span>${item.tool_name}</span>
+                                        <span class="font-medium">x${item.quantity}</span>
+                                    </div>
+                                `,
+                                    )
+                                    .join("") ||
+                                  '<p class="text-gray-500">No items</p>'
+                                }
+                            </div>
+                        </div>
+
+                        ${
+                          borrow.approved_by
+                            ? `
+                            <div class="border-t pt-4 text-sm">
+                                <p class="text-gray-600">Approved By</p>
+                                <p class="font-medium">${borrow.approved_by}</p>
+                                <p class="text-gray-500">${formatDateTime(borrow.approved_at)}</p>
+                            </div>
+                        `
+                            : ""
+                        }
+                    </div>
+                `;
+
+          modal.classList.remove("hidden");
+        } catch (error) {
+          toast.error("Failed to load details");
+        }
+      };
+
+      window.closeModal = () => {
+        document.getElementById("detail-modal").classList.add("hidden");
+      };
+
+      document
+        .getElementById("status-filter")
+        .addEventListener("change", () => loadBorrows(1));
+
+      loadBorrows();
+    </script>
+  </body>
+</html>

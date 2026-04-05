@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Approvals - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold text-gray-900">Borrow Approvals</h1>
+          <p class="text-gray-600">Review and approve borrowing requests</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div class="card flex items-center gap-4">
+            <div
+              class="w-12 h-12 bg-yellow-500 rounded-lg flex items-center justify-center text-white"
+            >
+              <i class="fas fa-clock text-xl"></i>
+            </div>
+            <div>
+              <p class="text-2xl font-bold text-gray-900" id="pending-count">
+                -
+              </p>
+              <p class="text-sm text-gray-600">Pending</p>
+            </div>
+          </div>
+          <div class="card flex items-center gap-4">
+            <div
+              class="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center text-white"
+            >
+              <i class="fas fa-check text-xl"></i>
+            </div>
+            <div>
+              <p class="text-2xl font-bold text-gray-900" id="approved-count">
+                -
+              </p>
+              <p class="text-sm text-gray-600">Approved Today</p>
+            </div>
+          </div>
+          <div class="card flex items-center gap-4">
+            <div
+              class="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center text-white"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </div>
+            <div>
+              <p class="text-2xl font-bold text-gray-900" id="rejected-count">
+                -
+              </p>
+              <p class="text-sm text-gray-600">Rejected Today</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+          <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+              <input
+                type="text"
+                id="search-input"
+                class="form-input"
+                placeholder="Search borrower..."
+              />
+            </div>
+            <div class="w-full md:w-48">
+              <select id="status-filter" class="form-input">
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="">All</option>
+              </select>
+            </div>
+            <button onclick="loadBorrows()" class="btn-secondary">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+          <div id="approvals-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Approve/Reject Modal -->
+    <div
+      id="action-modal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div class="p-6 border-b border-gray-200">
+          <h3 class="text-lg font-semibold" id="action-title">Action</h3>
+        </div>
+        <div class="p-6">
+          <div
+            id="borrow-details"
+            class="mb-4 p-4 bg-gray-50 rounded-lg text-sm"
+          >
+            <!-- Details loaded here -->
+          </div>
+
+          <div id="reject-reason" class="hidden mb-4">
+            <label class="form-label">Reason for Rejection</label>
+            <textarea
+              id="reject-reason-input"
+              class="form-input"
+              rows="3"
+              placeholder="Optional reason..."
+            ></textarea>
+          </div>
+
+          <div class="flex gap-3">
+            <button onclick="closeModal()" class="btn-secondary flex-1">
+              Cancel
+            </button>
+            <button
+              onclick="confirmAction()"
+              id="confirm-btn"
+              class="btn-primary flex-1"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import { checkAuth, isAdmin, isStaff } from "../src/utils/auth.js";
+      import { borrowsApi } from "../src/api/borrows.js";
+      import { approvalsApi } from "../src/api/approvals.js";
+      import { toast } from "../src/components/Toast.js";
+      import {
+        UI,
+        formatDate,
+        formatDateTime,
+      } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth() || (!isAdmin() && !isStaff())) {
+        window.location.href = "/dashboard.html";
+        throw new Error("Access denied");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      let currentPage = 1;
+      let currentAction = null; // 'approve' or 'reject'
+      let currentBorrowId = null;
+
+      async function loadBorrows(page = 1) {
+        currentPage = page;
+        const search = document.getElementById("search-input").value;
+        const status = document.getElementById("status-filter").value;
+
+        try {
+          const response = await borrowsApi.getAll({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+            search: search || undefined,
+            status: status || undefined,
+          });
+
+          const borrows = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          renderTable(borrows);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadBorrows,
+          );
+          Pagination.init(loadBorrows);
+
+          // Update stats (mock for now)
+          document.getElementById("pending-count").textContent =
+            borrows.filter((b) => b.status === "pending").length || "-";
+        } catch (error) {
+          toast.error("Failed to load approvals");
+        }
+      }
+
+      function renderTable(borrows) {
+        const container = document.getElementById("approvals-table");
+
+        container.innerHTML = Table.render({
+          headers: [
+            {
+              key: "borrower",
+              label: "Borrower",
+              render: (borrower) => borrower?.name || "Unknown",
+            },
+            {
+              key: "borrow_date",
+              label: "Date",
+              render: (date) => formatDate(date),
+            },
+            {
+              key: "due_date",
+              label: "Due Date",
+              render: (date) => formatDate(date),
+            },
+            {
+              key: "total_items",
+              label: "Items",
+              class: "text-center",
+            },
+            {
+              key: "status",
+              label: "Status",
+              render: (status) => `
+                            <span class="status-badge ${UI.BORROW_STATUS[status?.toUpperCase()]?.class || ""}">
+                                ${UI.BORROW_STATUS[status?.toUpperCase()]?.label || status}
+                            </span>
+                        `,
+            },
+          ],
+          rows: borrows,
+          actions: (borrow) => {
+            if (borrow.status === "pending") {
+              return `
+                            <button onclick="approveBorrow('${borrow.id}')" class="text-green-600 hover:text-green-800 mr-3" title="Approve">
+                                <i class="fas fa-check-circle text-lg"></i>
+                            </button>
+                            <button onclick="rejectBorrow('${borrow.id}')" class="text-red-600 hover:text-red-800" title="Reject">
+                                <i class="fas fa-times-circle text-lg"></i>
+                            </button>
+                        `;
+            }
+            return `
+                        <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    `;
+          },
+        });
+      }
+
+      window.approveBorrow = async (id) => {
+        currentAction = "approve";
+        currentBorrowId = id;
+
+        // Load borrow details
+        try {
+          const response = await borrowsApi.getById(id);
+          const borrow = response.result;
+
+          document.getElementById("action-title").textContent =
+            "Approve Borrow Request";
+          document.getElementById("borrow-details").innerHTML = `
+                    <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
+                    <p><strong>Items:</strong> ${borrow.total_items} items</p>
+                    <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
+                `;
+          document.getElementById("reject-reason").classList.add("hidden");
+          document.getElementById("confirm-btn").className =
+            "btn-success flex-1";
+          document.getElementById("confirm-btn").innerHTML =
+            '<i class="fas fa-check mr-2"></i> Approve';
+
+          document.getElementById("action-modal").classList.remove("hidden");
+        } catch (error) {
+          toast.error("Failed to load borrow details");
+        }
+      };
+
+      window.rejectBorrow = async (id) => {
+        currentAction = "reject";
+        currentBorrowId = id;
+
+        try {
+          const response = await borrowsApi.getById(id);
+          const borrow = response.result;
+
+          document.getElementById("action-title").textContent =
+            "Reject Borrow Request";
+          document.getElementById("borrow-details").innerHTML = `
+                    <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
+                    <p><strong>Items:</strong> ${borrow.total_items} items</p>
+                    <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
+                `;
+          document.getElementById("reject-reason").classList.remove("hidden");
+          document.getElementById("confirm-btn").className =
+            "btn-danger flex-1";
+          document.getElementById("confirm-btn").innerHTML =
+            '<i class="fas fa-times mr-2"></i> Reject';
+
+          document.getElementById("action-modal").classList.remove("hidden");
+        } catch (error) {
+          toast.error("Failed to load borrow details");
+        }
+      };
+
+      window.confirmAction = async () => {
+        const btn = document.getElementById("confirm-btn");
+        btn.disabled = true;
+
+        try {
+          if (currentAction === "approve") {
+            await approvalsApi.approve(currentBorrowId);
+            toast.success("Borrow request approved");
+          } else {
+            const reason = document.getElementById("reject-reason-input").value;
+            await approvalsApi.reject(currentBorrowId, reason);
+            toast.success("Borrow request rejected");
+          }
+
+          closeModal();
+          loadBorrows(currentPage);
+        } catch (error) {
+          toast.error(error.message || "Action failed");
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
+      window.closeModal = () => {
+        document.getElementById("action-modal").classList.add("hidden");
+        document.getElementById("reject-reason-input").value = "";
+        currentAction = null;
+        currentBorrowId = null;
+      };
+
+      let searchTimeout;
+      document.getElementById("search-input").addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadBorrows(1), 500);
+      });
+
+      document
+        .getElementById("status-filter")
+        .addEventListener("change", () => loadBorrows(1));
+
+      loadBorrows();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Borrow - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold text-gray-900">New Borrow Request</h1>
+          <p class="text-gray-600">Create a new tool borrowing request</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Left: Borrow Form -->
+          <div class="lg:col-span-2 space-y-6">
+            <!-- Step 1: Set Due Date -->
+            <div class="card">
+              <h2 class="text-lg font-semibold mb-4">1. Set Return Date</h2>
+              <div class="flex gap-4">
+                <div class="flex-1">
+                  <label class="form-label">Due Date</label>
+                  <input
+                    type="date"
+                    id="due-date"
+                    class="form-input"
+                    required
+                    min=""
+                  />
+                </div>
+                <div class="flex items-end">
+                  <button
+                    onclick="createBorrow()"
+                    id="create-btn"
+                    class="btn-primary h-[42px] px-6"
+                  >
+                    Start Borrow
+                  </button>
+                </div>
+              </div>
+              <p class="text-sm text-gray-500 mt-2">
+                Select when you plan to return the tools
+              </p>
+            </div>
+
+            <!-- Step 2: Add Items (Hidden initially) -->
+            <div id="add-items-section" class="card hidden">
+              <h2 class="text-lg font-semibold mb-4">2. Add Tools</h2>
+
+              <div class="flex gap-4 mb-4">
+                <div class="flex-1">
+                  <select id="tool-select" class="form-input">
+                    <option value="">Select Tool</option>
+                  </select>
+                </div>
+                <div class="w-32">
+                  <input
+                    type="number"
+                    id="tool-qty"
+                    class="form-input"
+                    min="1"
+                    value="1"
+                    placeholder="Qty"
+                  />
+                </div>
+                <button onclick="addItem()" class="btn-primary px-4">
+                  <i class="fas fa-plus"></i>
+                </button>
+              </div>
+
+              <!-- Items List -->
+              <div id="items-list" class="space-y-2">
+                <p class="text-gray-500 text-center py-4">No items added yet</p>
+              </div>
+            </div>
+
+            <!-- Step 3: Submit (Hidden initially) -->
+            <div id="submit-section" class="card hidden">
+              <h2 class="text-lg font-semibold mb-4">3. Submit Request</h2>
+              <p class="text-gray-600 mb-4">
+                Review your borrow request before submitting.
+              </p>
+              <button
+                onclick="submitBorrow()"
+                id="submit-btn"
+                class="btn-success w-full py-3 text-lg"
+              >
+                <i class="fas fa-paper-plane mr-2"></i>
+                Submit for Approval
+              </button>
+            </div>
+          </div>
+
+          <!-- Right: Summary -->
+          <div class="lg:col-span-1">
+            <div class="card sticky top-24">
+              <h3 class="font-semibold mb-4">Borrow Summary</h3>
+              <div id="borrow-summary" class="space-y-3 text-sm">
+                <p class="text-gray-500">No active borrow session</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { checkAuth, isBorrower } from "../src/utils/auth.js";
+      import { borrowsApi } from "../src/api/borrows.js";
+      import { toolsApi } from "../src/api/tools.js";
+      import { toast } from "../src/components/Toast.js";
+      import { formatDate } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth()) {
+        window.location.href = "./login.html";
+        throw new Error("Not authenticated");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      // Set min date to today
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("due-date").min = today;
+
+      let currentBorrowId = null;
+      let currentItems = [];
+
+      async function loadTools() {
+        try {
+          const response = await toolsApi.getAll({
+            available_only: true,
+            limit: 100,
+          });
+          const tools = response.result?.data || [];
+
+          const select = document.getElementById("tool-select");
+          select.innerHTML =
+            '<option value="">Select Tool</option>' +
+            tools
+              .map(
+                (tool) => `
+                        <option value="${tool.id}" data-name="${tool.name}" data-stock="${tool.available_stock || tool.stock}">
+                            ${tool.name} (Available: ${tool.available_stock || tool.stock})
+                        </option>
+                    `,
+              )
+              .join("");
+        } catch (error) {
+          toast.error("Failed to load tools");
+        }
+      }
+
+      window.createBorrow = async () => {
+        const dueDate = document.getElementById("due-date").value;
+
+        if (!dueDate) {
+          toast.error("Please select a due date");
+          return;
+        }
+
+        const btn = document.getElementById("create-btn");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        try {
+          const response = await borrowsApi.create({ due_date: dueDate });
+
+          if (response.code === 201) {
+            currentBorrowId = response.result.id;
+            toast.success("Borrow session created");
+
+            // Show next sections
+            document
+              .getElementById("add-items-section")
+              .classList.remove("hidden");
+            document
+              .getElementById("submit-section")
+              .classList.remove("hidden");
+            document.getElementById("due-date").disabled = true;
+            btn.classList.add("hidden");
+
+            updateSummary();
+            loadTools();
+          } else {
+            toast.error(response.message || "Failed to create borrow");
+          }
+        } catch (error) {
+          toast.error(error.message || "Network error");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Start Borrow";
+        }
+      };
+
+      window.addItem = async () => {
+        const toolSelect = document.getElementById("tool-select");
+        const qtyInput = document.getElementById("tool-qty");
+
+        const toolId = toolSelect.value;
+        const quantity = parseInt(qtyInput.value);
+
+        if (!toolId) {
+          toast.error("Please select a tool");
+          return;
+        }
+
+        if (!quantity || quantity < 1) {
+          toast.error("Please enter a valid quantity");
+          return;
+        }
+
+        try {
+          const response = await borrowsApi.addItem(currentBorrowId, {
+            tool_id: toolId,
+            quantity: quantity,
+          });
+
+          if (response.code === 201) {
+            toast.success("Item added");
+
+            // Add to local items
+            const toolName =
+              toolSelect.options[toolSelect.selectedIndex].dataset.name;
+            currentItems.push({
+              id: response.result.id,
+              tool_id: toolId,
+              tool_name: toolName,
+              quantity: quantity,
+            });
+
+            renderItems();
+            updateSummary();
+
+            // Reset inputs
+            toolSelect.value = "";
+            qtyInput.value = 1;
+          } else {
+            toast.error(response.message || "Failed to add item");
+          }
+        } catch (error) {
+          toast.error(error.message || "Network error");
+        }
+      };
+
+      window.removeItem = async (itemId) => {
+        try {
+          await borrowsApi.removeItem(currentBorrowId, itemId);
+
+          currentItems = currentItems.filter((item) => item.id !== itemId);
+          renderItems();
+          updateSummary();
+          toast.success("Item removed");
+        } catch (error) {
+          toast.error("Failed to remove item");
+        }
+      };
+
+      function renderItems() {
+        const container = document.getElementById("items-list");
+
+        if (currentItems.length === 0) {
+          container.innerHTML =
+            '<p class="text-gray-500 text-center py-4">No items added yet</p>';
+          return;
+        }
+
+        container.innerHTML = currentItems
+          .map(
+            (item) => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                        <p class="font-medium text-gray-900">${item.tool_name}</p>
+                        <p class="text-sm text-gray-600">Qty: ${item.quantity}</p>
+                    </div>
+                    <button onclick="removeItem('${item.id}')" class="text-red-600 hover:text-red-800">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `,
+          )
+          .join("");
+      }
+
+      function updateSummary() {
+        const container = document.getElementById("borrow-summary");
+
+        if (!currentBorrowId) {
+          container.innerHTML =
+            '<p class="text-gray-500">No active borrow session</p>';
+          return;
+        }
+
+        const dueDate = document.getElementById("due-date").value;
+
+        container.innerHTML = `
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Borrow ID:</span>
+                    <span class="font-medium">#${currentBorrowId.slice(0, 8)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Due Date:</span>
+                    <span class="font-medium">${formatDate(dueDate)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Total Items:</span>
+                    <span class="font-medium">${currentItems.length}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-600">Total Quantity:</span>
+                    <span class="font-medium">${currentItems.reduce((sum, item) => sum + item.quantity, 0)}</span>
+                </div>
+            `;
+      }
+
+      window.submitBorrow = async () => {
+        if (currentItems.length === 0) {
+          toast.error("Please add at least one item");
+          return;
+        }
+
+        const btn = document.getElementById("submit-btn");
+        btn.disabled = true;
+        btn.innerHTML =
+          '<i class="fas fa-spinner fa-spin mr-2"></i> Submitting...';
+
+        try {
+          const response = await borrowsApi.submit(currentBorrowId);
+
+          if (response.code === 200) {
+            toast.success("Borrow request submitted successfully!");
+            setTimeout(() => {
+              window.location.href = "./my-borrows.html";
+            }, 1500);
+          } else {
+            toast.error(response.message || "Failed to submit");
+          }
+        } catch (error) {
+          toast.error(error.message || "Network error");
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML =
+            '<i class="fas fa-paper-plane mr-2"></i> Submit for Approval';
+        }
+      };
+
+      loadTools();
+    </script>
+  </body>
+</html>

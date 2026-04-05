@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <!-- Main Content -->
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p class="text-gray-600">
+            Welcome back, <span id="user-name">User</span>!
+          </p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div
+          id="stats-container"
+          class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"
+        >
+          <!-- Stats will be loaded here -->
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div class="card">
+            <h2 class="text-lg font-semibold mb-4">Recent Borrows</h2>
+            <div id="recent-borrows">
+              <p class="text-gray-500 text-center py-8">Loading...</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="text-lg font-semibold mb-4">Quick Actions</h2>
+            <div class="space-y-3" id="quick-actions">
+              <!-- Actions will be loaded based on role -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import {
+        checkAuth,
+        getUser,
+        isAdmin,
+        isStaff,
+        isBorrower,
+      } from "../src/utils/auth.js";
+      import { borrowsApi } from "../src/api/borrows.js";
+      import { usersApi } from "../src/api/users.js";
+      import { toolsApi } from "../src/api/tools.js";
+      import { formatDate, UI } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth()) {
+        throw new Error("Not authenticated");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      // Set user name
+      const user = getUser();
+      document.getElementById("user-name").textContent = user.name;
+
+      // Load dashboard data
+      async function loadDashboard() {
+        try {
+          // Load stats based on role
+          await loadStats();
+
+          // Load recent borrows
+          await loadRecentBorrows();
+
+          // Load quick actions
+          loadQuickActions();
+        } catch (error) {
+          console.error("Dashboard error:", error);
+        }
+      }
+
+      async function loadStats() {
+        const container = document.getElementById("stats-container");
+
+        if (isAdmin() || isStaff()) {
+          // Admin/Staff stats
+          try {
+            const [usersRes, toolsRes, borrowsRes] = await Promise.all([
+              usersApi.getAll({ limit: 1 }),
+              toolsApi.getAll({ limit: 1 }),
+              borrowsApi.getAll({ limit: 1 }),
+            ]);
+
+            const stats = [
+              {
+                icon: "fa-users",
+                label: "Total Users",
+                value: usersRes.result?.metadata?.total_records || 0,
+                color: "bg-purple-500",
+              },
+              {
+                icon: "fa-tools",
+                label: "Total Tools",
+                value: toolsRes.result?.metadata?.total_records || 0,
+                color: "bg-blue-500",
+              },
+              {
+                icon: "fa-clipboard-list",
+                label: "Total Borrows",
+                value: borrowsRes.result?.metadata?.total_records || 0,
+                color: "bg-green-500",
+              },
+              {
+                icon: "fa-clock",
+                label: "Pending",
+                value: 0,
+                color: "bg-yellow-500",
+              },
+            ];
+
+            container.innerHTML = stats
+              .map(
+                (stat) => `
+                        <div class="card flex items-center gap-4">
+                            <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
+                                <i class="fas ${stat.icon} text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
+                                <p class="text-sm text-gray-600">${stat.label}</p>
+                            </div>
+                        </div>
+                    `,
+              )
+              .join("");
+          } catch (error) {
+            console.error("Stats error:", error);
+          }
+        } else {
+          // Borrower stats
+          try {
+            const myBorrowsRes = await borrowsApi.getMyBorrows({ limit: 1 });
+            const total =
+              myBorrowsRes.result?.data?.metadata?.total_records || 0;
+
+            const stats = [
+              {
+                icon: "fa-clipboard-list",
+                label: "My Borrows",
+                value: total,
+                color: "bg-blue-500",
+              },
+              {
+                icon: "fa-check-circle",
+                label: "Approved",
+                value: 0,
+                color: "bg-green-500",
+              },
+              {
+                icon: "fa-clock",
+                label: "Pending",
+                value: 0,
+                color: "bg-yellow-500",
+              },
+              {
+                icon: "fa-exclamation-circle",
+                label: "Overdue",
+                value: 0,
+                color: "bg-red-500",
+              },
+            ];
+
+            container.innerHTML = stats
+              .map(
+                (stat) => `
+                        <div class="card flex items-center gap-4">
+                            <div class="w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-white">
+                                <i class="fas ${stat.icon} text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-gray-900">${stat.value}</p>
+                                <p class="text-sm text-gray-600">${stat.label}</p>
+                            </div>
+                        </div>
+                    `,
+              )
+              .join("");
+          } catch (error) {
+            console.error("Stats error:", error);
+          }
+        }
+      }
+
+      async function loadRecentBorrows() {
+        const container = document.getElementById("recent-borrows");
+
+        try {
+          let response;
+          if (isBorrower()) {
+            response = await borrowsApi.getMyBorrows({ limit: 5 });
+          } else {
+            response = await borrowsApi.getAll({ limit: 5 });
+          }
+
+          const borrows = response.result?.data?.data || [];
+
+          if (borrows.length === 0) {
+            container.innerHTML =
+              '<p class="text-gray-500 text-center py-8">No recent borrows</p>';
+            return;
+          }
+
+          container.innerHTML = `
+                    <div class="space-y-3">
+                        ${borrows
+                          .map(
+                            (borrow) => `
+                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <div>
+                                    <p class="font-medium text-gray-900">
+                                        ${isBorrower() ? `Borrow #${borrow.id?.slice(0, 8)}` : borrow.borrower?.name || "Unknown"}
+                                    </p>
+                                    <p class="text-sm text-gray-600">${formatDate(borrow.borrow_date)}</p>
+                                </div>
+                                <span class="status-badge ${UI.BORROW_STATUS[borrow.status?.toUpperCase()]?.class || "bg-gray-100 text-gray-800"}">
+                                    ${borrow.status || "Unknown"}
+                                </span>
+                            </div>
+                        `,
+                          )
+                          .join("")}
+                    </div>
+                `;
+        } catch (error) {
+          container.innerHTML =
+            '<p class="text-red-500 text-center py-8">Failed to load data</p>';
+        }
+      }
+
+      function loadQuickActions() {
+        const container = document.getElementById("quick-actions");
+        let actions = [];
+
+        if (isAdmin()) {
+          actions = [
+            {
+              icon: "fa-user-plus",
+              label: "Add New User",
+              href: "./users.html",
+              color: "text-purple-600 bg-purple-50",
+            },
+            {
+              icon: "fa-tag",
+              label: "Add Category",
+              href: "./categories.html",
+              color: "text-blue-600 bg-blue-50",
+            },
+            {
+              icon: "fa-plus",
+              label: "Add Tool",
+              href: "./tools.html",
+              color: "text-green-600 bg-green-50",
+            },
+            {
+              icon: "fa-check-circle",
+              label: "Pending Approvals",
+              href: "./approvals.html",
+              color: "text-yellow-600 bg-yellow-50",
+            },
+          ];
+        } else if (isStaff()) {
+          actions = [
+            {
+              icon: "fa-tag",
+              label: "Manage Categories",
+              href: "./categories.html",
+              color: "text-blue-600 bg-blue-50",
+            },
+            {
+              icon: "fa-tools",
+              label: "Manage Tools",
+              href: "./tools.html",
+              color: "text-green-600 bg-green-50",
+            },
+            {
+              icon: "fa-check-circle",
+              label: "Pending Approvals",
+              href: "./approvals.html",
+              color: "text-yellow-600 bg-yellow-50",
+            },
+            {
+              icon: "fa-undo",
+              label: "Process Returns",
+              href: "./returns.html",
+              color: "text-red-600 bg-red-50",
+            },
+          ];
+        } else {
+          actions = [
+            {
+              icon: "fa-plus-circle",
+              label: "New Borrow Request",
+              href: "./borrows.html",
+              color: "text-green-600 bg-green-50",
+            },
+            {
+              icon: "fa-clipboard-list",
+              label: "View My Borrows",
+              href: "./my-borrows.html",
+              color: "text-blue-600 bg-blue-50",
+            },
+            {
+              icon: "fa-tools",
+              label: "Browse Tools",
+              href: "./tools.html",
+              color: "text-purple-600 bg-purple-50",
+            },
+          ];
+        }
+
+        container.innerHTML = actions
+          .map(
+            (action) => `
+                <a href="${action.href}" class="flex items-center gap-3 p-3 rounded-lg ${action.color} hover:opacity-80 transition">
+                    <i class="fas ${action.icon} w-5"></i>
+                    <span class="font-medium">${action.label}</span>
+                    <i class="fas fa-arrow-right ml-auto"></i>
+                </a>
+            `,
+          )
+          .join("");
+      }
+
+      // Initialize
+      loadDashboard();
+    </script>
+  </body>
+</html>

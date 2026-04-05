@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Users - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Users Management</h1>
+            <p class="text-gray-600">Manage system users</p>
+          </div>
+          <button
+            onclick="openModal()"
+            class="btn-primary flex items-center gap-2"
+          >
+            <i class="fas fa-plus"></i>
+            <span>Add User</span>
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+          <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+              <input
+                type="text"
+                id="search-input"
+                class="form-input"
+                placeholder="Search by name or email..."
+              />
+            </div>
+            <div class="w-full md:w-48">
+              <select id="role-filter" class="form-input">
+                <option value="">All Roles</option>
+                <option value="admin">Admin</option>
+                <option value="staff">Staff</option>
+                <option value="borrower">Borrower</option>
+              </select>
+            </div>
+            <button onclick="loadUsers()" class="btn-secondary">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+          <div id="users-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modal -->
+    <div
+      id="user-modal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div
+          class="p-6 border-b border-gray-200 flex justify-between items-center"
+        >
+          <h3 class="text-lg font-semibold" id="modal-title">Add User</h3>
+          <button
+            onclick="closeModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <form id="user-form" class="p-6 space-y-4">
+          <input type="hidden" id="user-id" />
+          <div>
+            <label class="form-label">Full Name</label>
+            <input type="text" id="user-name" class="form-input" required />
+          </div>
+          <div>
+            <label class="form-label">Email</label>
+            <input type="email" id="user-email" class="form-input" required />
+          </div>
+          <div>
+            <label class="form-label">Role</label>
+            <select id="user-role" class="form-input" required>
+              <option value="borrower">Borrower</option>
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div id="password-field">
+            <label class="form-label">Password</label>
+            <input
+              type="password"
+              id="user-password"
+              class="form-input"
+              minlength="6"
+            />
+            <p class="text-xs text-gray-500 mt-1">
+              Leave blank to keep unchanged (when editing)
+            </p>
+          </div>
+          <div class="flex gap-3 pt-4">
+            <button
+              type="button"
+              onclick="closeModal()"
+              class="btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn-primary flex-1">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import { checkAuth, isAdmin } from "../src/utils/auth.js";
+      import { usersApi } from "../src/api/users.js";
+      import { toast } from "../src/components/Toast.js";
+      import { UI, formatDate } from "../src/utils/constants.js";
+
+      // Check auth and permission
+      if (!checkAuth() || !isAdmin()) {
+        window.location.href = "./dashboard.html";
+        throw new Error("Access denied");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      let currentPage = 1;
+      let editingId = null;
+
+      // Load users
+      async function loadUsers(page = 1) {
+        currentPage = page;
+        const search = document.getElementById("search-input").value;
+        const role = document.getElementById("role-filter").value;
+
+        try {
+          const response = await usersApi.getAll({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+            search: search || undefined,
+            role: role || undefined,
+          });
+
+          const users = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          renderTable(users);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadUsers,
+          );
+          Pagination.init(loadUsers);
+        } catch (error) {
+          toast.error("Failed to load users");
+          console.error(error);
+        }
+      }
+
+      function renderTable(users) {
+        const container = document.getElementById("users-table");
+
+        container.innerHTML = Table.render({
+          headers: [
+            { key: "name", label: "Name" },
+            { key: "email", label: "Email" },
+            {
+              key: "role",
+              label: "Role",
+              render: (role) => `
+                            <span class="status-badge ${UI.ROLES[role?.toUpperCase()]?.class || ""}">
+                                ${UI.ROLES[role?.toUpperCase()]?.label || role}
+                            </span>
+                        `,
+            },
+            {
+              key: "created_at",
+              label: "Created",
+              render: (date) => formatDate(date),
+            },
+          ],
+          rows: users,
+          actions: (user) => `
+                    <button onclick="editUser('${user.id}')" class="text-blue-600 hover:text-blue-800 mr-3">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="deleteUser('${user.id}', '${user.name}')" class="text-red-600 hover:text-red-800">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `,
+        });
+      }
+
+      // Modal functions
+      window.openModal = (id = null) => {
+        editingId = id;
+        const modal = document.getElementById("user-modal");
+        const title = document.getElementById("modal-title");
+        const passwordField = document.getElementById("password-field");
+
+        modal.classList.remove("hidden");
+
+        if (id) {
+          title.textContent = "Edit User";
+          passwordField.querySelector("input").required = false;
+          // Load user data
+          loadUserData(id);
+        } else {
+          title.textContent = "Add User";
+          document.getElementById("user-form").reset();
+          document.getElementById("user-id").value = "";
+          passwordField.querySelector("input").required = true;
+        }
+      };
+
+      window.closeModal = () => {
+        document.getElementById("user-modal").classList.add("hidden");
+        editingId = null;
+      };
+
+      async function loadUserData(id) {
+        try {
+          const response = await usersApi.getById(id);
+          const user = response.result;
+
+          document.getElementById("user-id").value = user.id;
+          document.getElementById("user-name").value = user.name;
+          document.getElementById("user-email").value = user.email;
+          document.getElementById("user-role").value = user.role;
+        } catch (error) {
+          toast.error("Failed to load user data");
+        }
+      }
+
+      // Form submit
+      document
+        .getElementById("user-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const data = {
+            name: document.getElementById("user-name").value,
+            email: document.getElementById("user-email").value,
+            role: document.getElementById("user-role").value,
+          };
+
+          const password = document.getElementById("user-password").value;
+          if (password) {
+            data.password = password;
+          }
+
+          try {
+            if (editingId) {
+              await usersApi.update(editingId, data);
+              toast.success("User updated successfully");
+            } else {
+              if (!password) {
+                toast.error("Password is required for new user");
+                return;
+              }
+              data.password = password;
+              await usersApi.create(data);
+              toast.success("User created successfully");
+            }
+
+            closeModal();
+            loadUsers(currentPage);
+          } catch (error) {
+            toast.error(error.message || "Operation failed");
+          }
+        });
+
+      // Edit user
+      window.editUser = (id) => {
+        openModal(id);
+      };
+
+      // Delete user
+      window.deleteUser = async (id, name) => {
+        if (!confirm(`Are you sure you want to delete user "${name}"?`)) {
+          return;
+        }
+
+        try {
+          await usersApi.delete(id);
+          toast.success("User deleted successfully");
+          loadUsers(currentPage);
+        } catch (error) {
+          toast.error(error.message || "Failed to delete user");
+        }
+      };
+
+      // Search debounce
+      let searchTimeout;
+      document.getElementById("search-input").addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadUsers(1), 500);
+      });
+
+      document
+        .getElementById("role-filter")
+        .addEventListener("change", () => loadUsers(1));
+
+      // Initial load
+      loadUsers();
+    </script>
+  </body>
+</html>

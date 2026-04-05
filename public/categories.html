@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Categories - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Categories</h1>
+            <p class="text-gray-600">Manage tool categories</p>
+          </div>
+          <button
+            onclick="openModal()"
+            class="btn-primary flex items-center gap-2"
+          >
+            <i class="fas fa-plus"></i>
+            <span>Add Category</span>
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <input
+                type="text"
+                id="search-input"
+                class="form-input"
+                placeholder="Search categories..."
+              />
+            </div>
+            <button onclick="loadCategories()" class="btn-secondary">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+          <div id="categories-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modal -->
+    <div
+      id="category-modal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+        <div
+          class="p-6 border-b border-gray-200 flex justify-between items-center"
+        >
+          <h3 class="text-lg font-semibold" id="modal-title">Add Category</h3>
+          <button
+            onclick="closeModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <form id="category-form" class="p-6 space-y-4">
+          <input type="hidden" id="category-id" />
+          <div>
+            <label class="form-label">Category Name</label>
+            <input type="text" id="category-name" class="form-input" required />
+          </div>
+          <div class="flex gap-3 pt-4">
+            <button
+              type="button"
+              onclick="closeModal()"
+              class="btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn-primary flex-1">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import { checkAuth, isAdmin, isStaff } from "../src/utils/auth.js";
+      import { categoriesApi } from "../src/api/categories.js";
+      import { toast } from "../src/components/Toast.js";
+      import { UI, formatDate } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth() || (!isAdmin() && !isStaff())) {
+        window.location.href = "./dashboard.html";
+        throw new Error("Access denied");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      let currentPage = 1;
+      let editingId = null;
+
+      async function loadCategories(page = 1) {
+        currentPage = page;
+        const search = document.getElementById("search-input").value;
+
+        try {
+          const response = await categoriesApi.getAll({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+            search: search || undefined,
+          });
+
+          const categories = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          renderTable(categories);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadCategories,
+          );
+          Pagination.init(loadCategories);
+        } catch (error) {
+          toast.error("Failed to load categories");
+        }
+      }
+
+      function renderTable(categories) {
+        const container = document.getElementById("categories-table");
+
+        container.innerHTML = Table.render({
+          headers: [
+            { key: "name", label: "Name" },
+            {
+              key: "tools_count",
+              label: "Tools Count",
+              class: "text-center",
+            },
+            {
+              key: "created_at",
+              label: "Created",
+              render: (date) => formatDate(date),
+            },
+          ],
+          rows: categories,
+          actions: (category) => `
+                    <button onclick="editCategory('${category.id}')" class="text-blue-600 hover:text-blue-800 mr-3">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    ${
+                      isAdmin()
+                        ? `
+                        <button onclick="deleteCategory('${category.id}', '${category.name}')" class="text-red-600 hover:text-red-800">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    `
+                        : ""
+                    }
+                `,
+        });
+      }
+
+      window.openModal = (id = null) => {
+        editingId = id;
+        const modal = document.getElementById("category-modal");
+        const title = document.getElementById("modal-title");
+
+        modal.classList.remove("hidden");
+
+        if (id) {
+          title.textContent = "Edit Category";
+          loadCategoryData(id);
+        } else {
+          title.textContent = "Add Category";
+          document.getElementById("category-form").reset();
+          document.getElementById("category-id").value = "";
+        }
+      };
+
+      window.closeModal = () => {
+        document.getElementById("category-modal").classList.add("hidden");
+        editingId = null;
+      };
+
+      async function loadCategoryData(id) {
+        try {
+          const response = await categoriesApi.getById(id);
+          const category = response.result;
+
+          document.getElementById("category-id").value = category.id;
+          document.getElementById("category-name").value = category.name;
+        } catch (error) {
+          toast.error("Failed to load category data");
+        }
+      }
+
+      document
+        .getElementById("category-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const data = {
+            name: document.getElementById("category-name").value,
+          };
+
+          try {
+            if (editingId) {
+              await categoriesApi.update(editingId, data);
+              toast.success("Category updated successfully");
+            } else {
+              await categoriesApi.create(data);
+              toast.success("Category created successfully");
+            }
+
+            closeModal();
+            loadCategories(currentPage);
+          } catch (error) {
+            toast.error(error.message || "Operation failed");
+          }
+        });
+
+      window.editCategory = (id) => {
+        openModal(id);
+      };
+
+      window.deleteCategory = async (id, name) => {
+        if (!confirm(`Are you sure you want to delete category "${name}"?`)) {
+          return;
+        }
+
+        try {
+          await categoriesApi.delete(id);
+          toast.success("Category deleted successfully");
+          loadCategories(currentPage);
+        } catch (error) {
+          toast.error(error.message || "Failed to delete category");
+        }
+      };
+
+      let searchTimeout;
+      document.getElementById("search-input").addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadCategories(1), 500);
+      });
+
+      loadCategories();
+    </script>
+  </body>
+</html>

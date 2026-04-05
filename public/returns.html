@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Returns - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Returns</h1>
+            <p class="text-gray-600">
+              Process tool returns and calculate fines
+            </p>
+          </div>
+        </div>
+
+        <!-- Process Return Form -->
+        <div class="card mb-6">
+          <h2 class="text-lg font-semibold mb-4">Process New Return</h2>
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label class="form-label">Borrow Transaction ID</label>
+              <input
+                type="text"
+                id="borrow-id-input"
+                class="form-input"
+                placeholder="Enter borrow ID or scan barcode"
+              />
+            </div>
+            <div class="flex items-end gap-2">
+              <button onclick="calculateFine()" class="btn-secondary h-[42px]">
+                <i class="fas fa-calculator mr-2"></i>Calculate Fine
+              </button>
+              <button onclick="processReturn()" class="btn-primary h-[42px]">
+                <i class="fas fa-check mr-2"></i>Process Return
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fine Preview -->
+        <div id="fine-preview" class="card mb-6 hidden">
+          <h3 class="font-semibold mb-3">Fine Calculation Preview</h3>
+          <div
+            id="fine-details"
+            class="bg-yellow-50 border border-yellow-200 rounded-lg p-4"
+          >
+            <!-- Fine details loaded here -->
+          </div>
+        </div>
+
+        <!-- Returns List -->
+        <div class="card">
+          <h2 class="text-lg font-semibold mb-4">Recent Returns</h2>
+          <div id="returns-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import { checkAuth, isAdmin, isStaff } from "../src/utils/auth.js";
+      import { returnsApi } from "../src/api/returns.js";
+      import { toast } from "../src/components/Toast.js";
+      import {
+        UI,
+        formatDate,
+        formatCurrency,
+      } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth() || (!isAdmin() && !isStaff())) {
+        window.location.href = "./dashboard.html";
+        throw new Error("Access denied");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      let currentPage = 1;
+      let currentFineData = null;
+
+      async function loadReturns(page = 1) {
+        currentPage = page;
+
+        try {
+          const response = await returnsApi.getAll({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+          });
+
+          const returns = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          renderTable(returns);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadReturns,
+          );
+          Pagination.init(loadReturns);
+        } catch (error) {
+          toast.error("Failed to load returns");
+        }
+      }
+
+      function renderTable(returns) {
+        const container = document.getElementById("returns-table");
+
+        container.innerHTML = Table.render({
+          headers: [
+            {
+              key: "borrow_transaction_id",
+              label: "Borrow ID",
+              render: (id) => `#${id?.slice(0, 8)}`,
+            },
+            {
+              key: "borrower_name",
+              label: "Borrower",
+            },
+            {
+              key: "returned_at",
+              label: "Returned At",
+              render: (date) => formatDate(date),
+            },
+            {
+              key: "late_days",
+              label: "Late Days",
+              class: "text-center",
+              render: (days) =>
+                days > 0
+                  ? `<span class="text-red-600 font-medium">${days}</span>`
+                  : "0",
+            },
+            {
+              key: "fine_amount",
+              label: "Fine",
+              render: (amount) => (amount > 0 ? formatCurrency(amount) : "-"),
+            },
+          ],
+          rows: returns,
+        });
+      }
+
+      window.calculateFine = async () => {
+        const borrowId = document
+          .getElementById("borrow-id-input")
+          .value.trim();
+
+        if (!borrowId) {
+          toast.error("Please enter borrow ID");
+          return;
+        }
+
+        try {
+          const response = await returnsApi.calculateFine(borrowId);
+
+          if (response.code === 200) {
+            currentFineData = response.result;
+            const preview = document.getElementById("fine-preview");
+            const details = document.getElementById("fine-details");
+
+            details.innerHTML = `
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <p class="text-gray-600">Due Date</p>
+                                <p class="font-medium">${formatDate(response.result.due_date)}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Current Date</p>
+                                <p class="font-medium">${formatDate(response.result.current_date)}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Late Days</p>
+                                <p class="font-medium ${response.result.late_days > 0 ? "text-red-600" : ""}">
+                                    ${response.result.late_days} days
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Fine Amount</p>
+                                <p class="font-medium text-lg ${response.result.fine_amount > 0 ? "text-red-600" : "text-green-600"}">
+                                    ${formatCurrency(response.result.fine_amount)}
+                                </p>
+                            </div>
+                        </div>
+                    `;
+
+            preview.classList.remove("hidden");
+          } else {
+            toast.error(response.message || "Failed to calculate fine");
+          }
+        } catch (error) {
+          toast.error(error.message || "Network error");
+        }
+      };
+
+      window.processReturn = async () => {
+        const borrowId = document
+          .getElementById("borrow-id-input")
+          .value.trim();
+
+        if (!borrowId) {
+          toast.error("Please enter borrow ID");
+          return;
+        }
+
+        if (!confirm("Are you sure you want to process this return?")) {
+          return;
+        }
+
+        try {
+          const response = await returnsApi.create({
+            borrow_transaction_id: borrowId,
+          });
+
+          if (response.code === 201) {
+            toast.success("Return processed successfully");
+            document.getElementById("borrow-id-input").value = "";
+            document.getElementById("fine-preview").classList.add("hidden");
+            currentFineData = null;
+            loadReturns(1);
+          } else {
+            toast.error(response.message || "Failed to process return");
+          }
+        } catch (error) {
+          toast.error(error.message || "Network error");
+        }
+      };
+
+      loadReturns();
+    </script>
+  </body>
+</html>

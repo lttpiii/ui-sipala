@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tools - SIPALA</title>
+    <link rel="stylesheet" href="./css/tailwind.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+  </head>
+  <body class="bg-gray-100">
+    <div id="navbar-container"></div>
+    <div id="sidebar-container"></div>
+
+    <main class="lg:ml-64 pt-16 min-h-screen">
+      <div class="p-6">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
+        >
+          <div>
+            <h1 class="text-2xl font-bold text-gray-900">Tools</h1>
+            <p class="text-gray-600">Manage available tools</p>
+          </div>
+          <div class="flex gap-2" id="action-buttons">
+            <!-- Buttons will be shown/hidden based on role -->
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="card mb-6">
+          <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+              <input
+                type="text"
+                id="search-input"
+                class="form-input"
+                placeholder="Search tools..."
+              />
+            </div>
+            <div class="w-full md:w-48">
+              <select id="category-filter" class="form-input">
+                <option value="">All Categories</option>
+              </select>
+            </div>
+            <div class="w-full md:w-48">
+              <select id="availability-filter" class="form-input">
+                <option value="">All</option>
+                <option value="true">Available Only</option>
+              </select>
+            </div>
+            <button onclick="loadTools()" class="btn-secondary">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+          <div id="tools-table">
+            <p class="text-center py-12 text-gray-500">Loading...</p>
+          </div>
+          <div id="pagination"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Modal -->
+    <div
+      id="tool-modal"
+      class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div
+          class="p-6 border-b border-gray-200 flex justify-between items-center"
+        >
+          <h3 class="text-lg font-semibold" id="modal-title">Add Tool</h3>
+          <button
+            onclick="closeModal()"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <form id="tool-form" class="p-6 space-y-4">
+          <input type="hidden" id="tool-id" />
+          <div>
+            <label class="form-label">Tool Name</label>
+            <input type="text" id="tool-name" class="form-input" required />
+          </div>
+          <div>
+            <label class="form-label">Category</label>
+            <select id="tool-category" class="form-input" required>
+              <option value="">Select Category</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Stock</label>
+            <input
+              type="number"
+              id="tool-stock"
+              class="form-input"
+              min="0"
+              required
+            />
+          </div>
+          <div>
+            <label class="form-label">Description</label>
+            <textarea
+              id="tool-description"
+              class="form-input"
+              rows="3"
+            ></textarea>
+          </div>
+          <div class="flex gap-3 pt-4">
+            <button
+              type="button"
+              onclick="closeModal()"
+              class="btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn-primary flex-1">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Navbar } from "../src/components/Navbar.js";
+      import { Sidebar } from "../src/components/Sidebar.js";
+      import { Table } from "../src/components/Table.js";
+      import { Pagination } from "../src/components/Pagination.js";
+      import {
+        checkAuth,
+        isAdmin,
+        isStaff,
+        isBorrower,
+      } from "../src/utils/auth.js";
+      import { toolsApi } from "../src/api/tools.js";
+      import { categoriesApi } from "../src/api/categories.js";
+      import { toast } from "../src/components/Toast.js";
+      import { UI } from "../src/utils/constants.js";
+
+      // Check auth
+      if (!checkAuth()) {
+        window.location.href = "./login.html";
+        throw new Error("Not authenticated");
+      }
+
+      // Render layout
+      document.getElementById("navbar-container").innerHTML = Navbar.render();
+      document.getElementById("sidebar-container").innerHTML = Sidebar.render();
+      Navbar.init();
+      Sidebar.init();
+
+      // Show/hide action buttons based on role
+      const actionButtons = document.getElementById("action-buttons");
+      if (isAdmin() || isStaff()) {
+        actionButtons.innerHTML = `
+                <button onclick="openModal()" class="btn-primary flex items-center gap-2">
+                    <i class="fas fa-plus"></i>
+                    <span>Add Tool</span>
+                </button>
+            `;
+      }
+
+      let currentPage = 1;
+      let editingId = null;
+      let categories = [];
+
+      async function loadCategories() {
+        try {
+          const response = await categoriesApi.getAll({ limit: 100 });
+          categories = response.result?.data || [];
+
+          // Populate category filter
+          const filterSelect = document.getElementById("category-filter");
+          const modalSelect = document.getElementById("tool-category");
+
+          const options = categories
+            .map((cat) => `<option value="${cat.id}">${cat.name}</option>`)
+            .join("");
+
+          filterSelect.innerHTML =
+            '<option value="">All Categories</option>' + options;
+          modalSelect.innerHTML =
+            '<option value="">Select Category</option>' + options;
+        } catch (error) {
+          console.error("Failed to load categories");
+        }
+      }
+
+      async function loadTools(page = 1) {
+        currentPage = page;
+        const search = document.getElementById("search-input").value;
+        const categoryId = document.getElementById("category-filter").value;
+        const availableOnly = document.getElementById(
+          "availability-filter",
+        ).value;
+
+        try {
+          const response = await toolsApi.getAll({
+            page,
+            limit: UI.PAGINATION.DEFAULT_LIMIT,
+            search: search || undefined,
+            category_id: categoryId || undefined,
+            available_only: availableOnly === "true",
+          });
+
+          const tools = response.result?.data || [];
+          const metadata = response.result?.metadata;
+
+          renderTable(tools);
+          document.getElementById("pagination").innerHTML = Pagination.render(
+            metadata,
+            loadTools,
+          );
+          Pagination.init(loadTools);
+        } catch (error) {
+          toast.error("Failed to load tools");
+        }
+      }
+
+      function renderTable(tools) {
+        const container = document.getElementById("tools-table");
+
+        const headers = [
+          { key: "name", label: "Name" },
+          {
+            key: "category",
+            label: "Category",
+            render: (cat) => cat?.name || "-",
+          },
+          {
+            key: "stock",
+            label: "Stock",
+            class: "text-center",
+          },
+          {
+            key: "available_stock",
+            label: "Available",
+            class: "text-center",
+            render: (stock, row) => `
+                        <span class="${stock > 0 ? "text-green-600" : "text-red-600"} font-medium">
+                            ${stock !== undefined ? stock : row.stock}
+                        </span>
+                    `,
+          },
+        ];
+
+        // Add actions only for admin/staff
+        const actions =
+          isAdmin() || isStaff()
+            ? (tool) => `
+                <button onclick="editTool('${tool.id}')" class="text-blue-600 hover:text-blue-800 mr-3">
+                    <i class="fas fa-edit"></i>
+                </button>
+                ${
+                  isAdmin()
+                    ? `
+                    <button onclick="deleteTool('${tool.id}', '${tool.name}')" class="text-red-600 hover:text-red-800">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `
+                    : ""
+                }
+            `
+            : null;
+
+        container.innerHTML = Table.render({
+          headers,
+          rows: tools,
+          actions,
+        });
+      }
+
+      window.openModal = (id = null) => {
+        if (isBorrower()) {
+          toast.error("You do not have permission to manage tools");
+          return;
+        }
+
+        editingId = id;
+        const modal = document.getElementById("tool-modal");
+        const title = document.getElementById("modal-title");
+
+        modal.classList.remove("hidden");
+
+        if (id) {
+          title.textContent = "Edit Tool";
+          loadToolData(id);
+        } else {
+          title.textContent = "Add Tool";
+          document.getElementById("tool-form").reset();
+          document.getElementById("tool-id").value = "";
+        }
+      };
+
+      window.closeModal = () => {
+        document.getElementById("tool-modal").classList.add("hidden");
+        editingId = null;
+      };
+
+      async function loadToolData(id) {
+        try {
+          const response = await toolsApi.getById(id);
+          const tool = response.result;
+
+          document.getElementById("tool-id").value = tool.id;
+          document.getElementById("tool-name").value = tool.name;
+          document.getElementById("tool-category").value =
+            tool.category?.id || tool.category_id;
+          document.getElementById("tool-stock").value = tool.stock;
+          document.getElementById("tool-description").value =
+            tool.description || "";
+        } catch (error) {
+          toast.error("Failed to load tool data");
+        }
+      }
+
+      document
+        .getElementById("tool-form")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const data = {
+            name: document.getElementById("tool-name").value,
+            category_id: document.getElementById("tool-category").value,
+            stock: parseInt(document.getElementById("tool-stock").value),
+            description: document.getElementById("tool-description").value,
+          };
+
+          try {
+            if (editingId) {
+              await toolsApi.update(editingId, data);
+              toast.success("Tool updated successfully");
+            } else {
+              await toolsApi.create(data);
+              toast.success("Tool created successfully");
+            }
+
+            closeModal();
+            loadTools(currentPage);
+          } catch (error) {
+            toast.error(error.message || "Operation failed");
+          }
+        });
+
+      window.editTool = (id) => {
+        openModal(id);
+      };
+
+      window.deleteTool = async (id, name) => {
+        if (!confirm(`Are you sure you want to delete tool "${name}"?`)) {
+          return;
+        }
+
+        try {
+          await toolsApi.delete(id);
+          toast.success("Tool deleted successfully");
+          loadTools(currentPage);
+        } catch (error) {
+          toast.error(error.message || "Failed to delete tool");
+        }
+      };
+
+      // Event listeners
+      let searchTimeout;
+      document.getElementById("search-input").addEventListener("input", () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => loadTools(1), 500);
+      });
+
+      document
+        .getElementById("category-filter")
+        .addEventListener("change", () => loadTools(1));
+      document
+        .getElementById("availability-filter")
+        .addEventListener("change", () => loadTools(1));
+
+      // Initialize
+      loadCategories();
+      loadTools();
+    </script>
+  </body>
+</html>
