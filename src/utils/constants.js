@@ -56,7 +56,7 @@ export const ENDPOINTS = {
     LIST: "/api/returns/v1/returns",
     CREATE: "/api/returns/v1/returns",
     BY_ID: (id) => `/api/returns/v1/returns/${id}`,
-    CALCULATE_FINE: "/api/returns/v1/calculate-fine",
+    CALCULATE_FINE: "/api/returns/v1/returns/calculate-fine",
   },
   MONITORING: {
     ACTIVE_BORROWS: "/api/monitoring/v1/active-borrows",

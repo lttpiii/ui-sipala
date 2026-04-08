@@ -128,6 +128,26 @@
         </form>
       </div>
     </div>
+    <div
+      id="delete-modal"
+      class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-xl shadow-xl w-[90%] max-w-sm p-6 text-center"
+      >
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+        <p class="text-gray-600 mb-6" id="delete-message">Are you sure?</p>
+
+        <div class="flex gap-3">
+          <button onclick="closeDeleteModal()" class="btn-secondary flex-1">
+            Cancel
+          </button>
+          <button onclick="confirmDelete()" class="btn-secondary flex-1">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
 
     <script type="module">
       import { Navbar } from "../src/components/Navbar.js";
@@ -170,6 +190,7 @@
 
       let currentPage = 1;
       let editingId = null;
+      let deleteId = null;
       let categories = [];
 
       async function loadCategories() {
@@ -278,7 +299,7 @@
         });
       }
 
-      window.openModal = (id = null) => {
+      window.openModal = async (id = null) => {
         if (isBorrower()) {
           toast.error("You do not have permission to manage tools");
           return;
@@ -288,16 +309,16 @@
         const modal = document.getElementById("tool-modal");
         const title = document.getElementById("modal-title");
 
-        modal.classList.remove("hidden");
-
         if (id) {
           title.textContent = "Edit Tool";
-          loadToolData(id);
+          await loadToolData(id); // ⬅️ tunggu dulu
         } else {
           title.textContent = "Add Tool";
           document.getElementById("tool-form").reset();
           document.getElementById("tool-id").value = "";
         }
+
+        modal.classList.remove("hidden"); // ⬅️ tampilkan setelah data siap
       };
 
       window.closeModal = () => {
@@ -354,17 +375,30 @@
         openModal(id);
       };
 
-      window.deleteTool = async (id, name) => {
-        if (!confirm(`Are you sure you want to delete tool "${name}"?`)) {
-          return;
-        }
+      window.deleteTool = (id, name) => {
+        deleteId = id;
+
+        document.getElementById("delete-message").textContent =
+          `Are you sure you want to delete "${name}"?`;
+
+        document.getElementById("delete-modal").classList.remove("hidden");
+      };
+      window.closeDeleteModal = () => {
+        document.getElementById("delete-modal").classList.add("hidden");
+        deleteId = null;
+      };
+
+      window.confirmDelete = async () => {
+        if (!deleteId) return;
 
         try {
-          await toolsApi.delete(id);
+          await toolsApi.delete(deleteId);
           toast.success("Tool deleted successfully");
           loadTools(currentPage);
         } catch (error) {
           toast.error(error.message || "Failed to delete tool");
+        } finally {
+          closeDeleteModal();
         }
       };
 

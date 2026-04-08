@@ -32,19 +32,16 @@
           <h2 class="text-lg font-semibold mb-4">Process New Return</h2>
           <div class="flex gap-4">
             <div class="flex-1">
-              <label class="form-label">Borrow Transaction ID</label>
-              <input
-                type="text"
-                id="borrow-id-input"
-                class="form-input"
-                placeholder="Enter borrow ID or scan barcode"
-              />
+              <label class="form-label">Select Borrow Transaction</label>
+              <select id="borrow-id-select" class="form-input">
+                <option value="">Loading borrow transactions...</option>
+              </select>
             </div>
             <div class="flex items-end gap-2">
               <button onclick="calculateFine()" class="btn-secondary h-[42px]">
                 <i class="fas fa-calculator mr-2"></i>Calculate Fine
               </button>
-              <button onclick="processReturn()" class="btn-primary h-[42px]">
+              <button onclick="openConfirmModal()" class="btn-primary h-[42px]">
                 <i class="fas fa-check mr-2"></i>Process Return
               </button>
             </div>
@@ -73,6 +70,129 @@
       </div>
     </main>
 
+    <!-- Confirmation Modal -->
+    <div
+      id="confirm-modal"
+      class="fixed inset-0 z-50 hidden"
+      aria-labelledby="modal-title"
+      role="dialog"
+      aria-modal="true"
+    >
+      <!-- Backdrop -->
+      <div
+        class="absolute inset-0 bg-gray-900 bg-opacity-50"
+        onclick="closeConfirmModal()"
+      ></div>
+
+      <!-- Modal Content -->
+      <div
+        class="flex items-center justify-center min-h-screen p-4 pointer-events-none"
+      >
+        <div
+          class="relative bg-white rounded-lg shadow-xl max-w-md w-full pointer-events-auto"
+        >
+          <!-- Modal Header -->
+          <div
+            class="flex items-center justify-between p-4 border-b border-gray-200"
+          >
+            <div class="flex items-center gap-2">
+              <div
+                class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center"
+              >
+                <i class="fas fa-question-circle text-blue-600"></i>
+              </div>
+              <h3 class="text-lg font-semibold text-gray-900" id="modal-title">
+                Confirm Return
+              </h3>
+            </div>
+            <button
+              onclick="closeConfirmModal()"
+              class="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+
+          <!-- Modal Body -->
+          <div class="p-4">
+            <p class="text-gray-600 mb-4 text-sm">
+              Are you sure you want to process this return? Please review the
+              details below:
+            </p>
+
+            <!-- Details Box -->
+            <div class="bg-gray-50 rounded-lg p-4 space-y-3 mb-4">
+              <div class="flex justify-between items-center">
+                <span class="text-gray-600 text-sm">Borrow ID</span>
+                <span
+                  id="modal-borrow-id"
+                  class="font-medium text-gray-900 text-sm"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-gray-600 text-sm">Borrower</span>
+                <span
+                  id="modal-borrower-name"
+                  class="font-medium text-gray-900 text-sm"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-gray-600 text-sm">Due Date</span>
+                <span
+                  id="modal-due-date"
+                  class="font-medium text-gray-900 text-sm"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-gray-600 text-sm">Late Days</span>
+                <span id="modal-late-days" class="font-medium text-sm">-</span>
+              </div>
+              <div class="border-t border-gray-200 pt-3 mt-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-gray-700 font-medium text-sm"
+                    >Fine Amount</span
+                  >
+                  <span id="modal-fine-amount" class="font-bold text-lg"
+                    >-</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <p class="text-xs text-gray-400">
+              <i class="fas fa-info-circle mr-1"></i>
+              This action cannot be undone. The items will be marked as
+              returned.
+            </p>
+          </div>
+
+          <!-- Modal Footer - Buttons (FIXED) -->
+          <div class="p-4 border-t border-gray-200 bg-gray-50">
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onclick="closeConfirmModal()"
+                class="px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onclick="confirmProcessReturn()"
+                class="px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-sm transition-colors"
+              >
+                <i class="fas fa-check text-xs"></i>
+                Confirm Return
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       import { Navbar } from "../src/components/Navbar.js";
       import { Sidebar } from "../src/components/Sidebar.js";
@@ -80,6 +200,7 @@
       import { Pagination } from "../src/components/Pagination.js";
       import { checkAuth, isAdmin, isStaff } from "../src/utils/auth.js";
       import { returnsApi } from "../src/api/returns.js";
+      import { borrowsApi } from "../src/api/borrows.js";
       import { toast } from "../src/components/Toast.js";
       import {
         UI,
@@ -101,6 +222,50 @@
 
       let currentPage = 1;
       let currentFineData = null;
+      let selectedBorrowData = null;
+
+      // Load active borrow transactions for dropdown
+      async function loadActiveBorrows() {
+        const select = document.getElementById("borrow-id-select");
+
+        try {
+          const response = await borrowsApi.getAll({
+            status: "approved",
+            limit: 100,
+          });
+
+          const borrows = response.result?.data || [];
+          selectedBorrowData = borrows;
+
+          if (borrows.length === 0) {
+            select.innerHTML =
+              '<option value="">No active borrow transactions found</option>';
+            return;
+          }
+
+          let optionsHtml =
+            '<option value="">Select a borrow transaction...</option>';
+
+          borrows.forEach((borrow) => {
+            const borrowerName = borrow.borrower?.name || "Unknown";
+            const dueDate = formatDate(borrow.due_date);
+            const totalItems = borrow.total_items || 0;
+
+            optionsHtml += `
+              <option value="${borrow.id}">
+                #${borrow.id?.slice(0, 8)} - ${borrowerName} | ${totalItems} items | Due: ${dueDate}
+              </option>
+            `;
+          });
+
+          select.innerHTML = optionsHtml;
+        } catch (error) {
+          console.error("Failed to load borrows:", error);
+          select.innerHTML =
+            '<option value="">Failed to load borrow transactions</option>';
+          toast.error("Failed to load active borrow transactions");
+        }
+      }
 
       async function loadReturns(page = 1) {
         currentPage = page;
@@ -165,12 +330,10 @@
       }
 
       window.calculateFine = async () => {
-        const borrowId = document
-          .getElementById("borrow-id-input")
-          .value.trim();
+        const borrowId = document.getElementById("borrow-id-select").value;
 
         if (!borrowId) {
-          toast.error("Please enter borrow ID");
+          toast.error("Please select a borrow transaction");
           return;
         }
 
@@ -183,29 +346,29 @@
             const details = document.getElementById("fine-details");
 
             details.innerHTML = `
-                        <div class="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <p class="text-gray-600">Due Date</p>
-                                <p class="font-medium">${formatDate(response.result.due_date)}</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-600">Current Date</p>
-                                <p class="font-medium">${formatDate(response.result.current_date)}</p>
-                            </div>
-                            <div>
-                                <p class="text-gray-600">Late Days</p>
-                                <p class="font-medium ${response.result.late_days > 0 ? "text-red-600" : ""}">
-                                    ${response.result.late_days} days
-                                </p>
-                            </div>
-                            <div>
-                                <p class="text-gray-600">Fine Amount</p>
-                                <p class="font-medium text-lg ${response.result.fine_amount > 0 ? "text-red-600" : "text-green-600"}">
-                                    ${formatCurrency(response.result.fine_amount)}
-                                </p>
-                            </div>
-                        </div>
-                    `;
+              <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p class="text-gray-600">Due Date</p>
+                  <p class="font-medium">${formatDate(response.result.due_date)}</p>
+                </div>
+                <div>
+                  <p class="text-gray-600">Current Date</p>
+                  <p class="font-medium">${formatDate(response.result.current_date)}</p>
+                </div>
+                <div>
+                  <p class="text-gray-600">Late Days</p>
+                  <p class="font-medium ${response.result.late_days > 0 ? "text-red-600" : ""}">
+                    ${response.result.late_days} days
+                  </p>
+                </div>
+                <div>
+                  <p class="text-gray-600">Fine Amount</p>
+                  <p class="font-medium text-lg ${response.result.fine_amount > 0 ? "text-red-600" : "text-green-600"}">
+                    ${formatCurrency(response.result.fine_amount)}
+                  </p>
+                </div>
+              </div>
+            `;
 
             preview.classList.remove("hidden");
           } else {
@@ -216,17 +379,66 @@
         }
       };
 
-      window.processReturn = async () => {
-        const borrowId = document
-          .getElementById("borrow-id-input")
-          .value.trim();
+      // Open confirmation modal
+      window.openConfirmModal = () => {
+        const borrowId = document.getElementById("borrow-id-select").value;
 
         if (!borrowId) {
-          toast.error("Please enter borrow ID");
+          toast.error("Please select a borrow transaction");
           return;
         }
 
-        if (!confirm("Are you sure you want to process this return?")) {
+        const borrowInfo = selectedBorrowData?.find((b) => b.id === borrowId);
+
+        document.getElementById("modal-borrow-id").textContent = borrowId
+          ? `#${borrowId.slice(0, 8)}`
+          : "-";
+
+        document.getElementById("modal-borrower-name").textContent =
+          borrowInfo?.borrower?.name || "-";
+
+        document.getElementById("modal-due-date").textContent =
+          borrowInfo?.due_date ? formatDate(borrowInfo.due_date) : "-";
+
+        if (currentFineData) {
+          const lateDays = currentFineData.late_days || 0;
+          const fineAmount = currentFineData.fine_amount || 0;
+
+          const lateDaysEl = document.getElementById("modal-late-days");
+          lateDaysEl.textContent = `${lateDays} days`;
+          lateDaysEl.className = `font-medium text-sm ${lateDays > 0 ? "text-red-600" : "text-green-600"}`;
+
+          const fineAmountEl = document.getElementById("modal-fine-amount");
+          fineAmountEl.textContent = formatCurrency(fineAmount);
+          fineAmountEl.className = `font-bold text-lg ${fineAmount > 0 ? "text-red-600" : "text-green-600"}`;
+        } else {
+          document.getElementById("modal-late-days").textContent =
+            "Calculate first";
+          document.getElementById("modal-late-days").className =
+            "font-medium text-sm text-gray-500";
+          document.getElementById("modal-fine-amount").textContent =
+            "Calculate first";
+          document.getElementById("modal-fine-amount").className =
+            "font-bold text-lg text-gray-500";
+        }
+
+        const modal = document.getElementById("confirm-modal");
+        modal.classList.remove("hidden");
+      };
+
+      // Close confirmation modal
+      window.closeConfirmModal = () => {
+        const modal = document.getElementById("confirm-modal");
+        modal.classList.add("hidden");
+      };
+
+      // Confirm and process return
+      window.confirmProcessReturn = async () => {
+        const borrowId = document.getElementById("borrow-id-select").value;
+
+        if (!borrowId) {
+          toast.error("No borrow transaction selected");
+          closeConfirmModal();
           return;
         }
 
@@ -237,18 +449,33 @@
 
           if (response.code === 201) {
             toast.success("Return processed successfully");
-            document.getElementById("borrow-id-input").value = "";
+
+            document.getElementById("borrow-id-select").value = "";
             document.getElementById("fine-preview").classList.add("hidden");
             currentFineData = null;
+
+            closeConfirmModal();
             loadReturns(1);
+            loadActiveBorrows();
           } else {
             toast.error(response.message || "Failed to process return");
+            closeConfirmModal();
           }
         } catch (error) {
           toast.error(error.message || "Network error");
+          closeConfirmModal();
         }
       };
 
+      // Close modal on Escape key
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeConfirmModal();
+        }
+      });
+
+      // Initialize
+      loadActiveBorrows();
       loadReturns();
     </script>
   </body>

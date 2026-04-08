@@ -106,7 +106,7 @@
             const [usersRes, toolsRes, borrowsRes] = await Promise.all([
               usersApi.getAll({ limit: 1 }),
               toolsApi.getAll({ limit: 1 }),
-              borrowsApi.getAll({ limit: 1 }),
+              borrowsApi.getAll(),
             ]);
 
             // Fix: Ambil data dari struktur response yang benar
@@ -123,6 +123,10 @@
               (Array.isArray(borrowsRes.result?.data)
                 ? borrowsRes.result.data.length
                 : 0);
+            const borrowsData = extractDataFromResponse(borrowsRes);
+            const pendingTotal = borrowsData.filter(
+              (item) => item.status === "pending",
+            ).length;
 
             const stats = [
               {
@@ -146,7 +150,7 @@
               {
                 icon: "fa-clock",
                 label: "Pending",
-                value: 0,
+                value: pendingTotal,
                 color: "bg-yellow-500",
               },
             ];

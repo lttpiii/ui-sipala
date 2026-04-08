@@ -182,8 +182,8 @@
           const response = await borrowsApi.getAll({
             page,
             limit: UI.PAGINATION.DEFAULT_LIMIT,
-            search: search || undefined,
-            status: status || undefined,
+            search: search,
+            status: status,
           });
 
           const borrows = response.result?.data || [];
@@ -199,6 +199,10 @@
           // Update stats (mock for now)
           document.getElementById("pending-count").textContent =
             borrows.filter((b) => b.status === "pending").length || "-";
+          document.getElementById("approved-count").textContent =
+            borrows.filter((b) => b.status === "approved").length || "-";
+          document.getElementById("rejected-count").textContent =
+            borrows.filter((b) => b.status === "rejected").length || "-";
         } catch (error) {
           toast.error("Failed to load approvals");
         }
@@ -233,29 +237,29 @@
               key: "status",
               label: "Status",
               render: (status) => `
-                            <span class="status-badge ${UI.BORROW_STATUS[status?.toUpperCase()]?.class || ""}">
-                                ${UI.BORROW_STATUS[status?.toUpperCase()]?.label || status}
-                            </span>
-                        `,
+                              <span class="status-badge ${UI.BORROW_STATUS[status?.toUpperCase()]?.class || ""}">
+                                  ${UI.BORROW_STATUS[status?.toUpperCase()]?.label || status}
+                              </span>
+                          `,
             },
           ],
           rows: borrows,
           actions: (borrow) => {
             if (borrow.status === "pending") {
               return `
-                            <button onclick="approveBorrow('${borrow.id}')" class="text-green-600 hover:text-green-800 mr-3" title="Approve">
-                                <i class="fas fa-check-circle text-lg"></i>
-                            </button>
-                            <button onclick="rejectBorrow('${borrow.id}')" class="text-red-600 hover:text-red-800" title="Reject">
-                                <i class="fas fa-times-circle text-lg"></i>
-                            </button>
-                        `;
+                              <button onclick="approveBorrow('${borrow.id}')" class="text-green-600 hover:text-green-800 mr-3" title="Approve">
+                                  <i class="fas fa-check-circle text-lg"></i>
+                              </button>
+                              <button onclick="rejectBorrow('${borrow.id}')" class="text-red-600 hover:text-red-800" title="Reject">
+                                  <i class="fas fa-times-circle text-lg"></i>
+                              </button>
+                          `;
             }
             return `
-                        <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    `;
+                          <button onclick="viewDetails('${borrow.id}')" class="text-blue-600 hover:text-blue-800">
+                              <i class="fas fa-eye"></i>
+                          </button>
+                      `;
           },
         });
       }
@@ -272,10 +276,10 @@
           document.getElementById("action-title").textContent =
             "Approve Borrow Request";
           document.getElementById("borrow-details").innerHTML = `
-                    <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
-                    <p><strong>Items:</strong> ${borrow.total_items} items</p>
-                    <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
-                `;
+                      <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
+                      <p><strong>Items:</strong> ${borrow.total_items} items</p>
+                      <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
+                  `;
           document.getElementById("reject-reason").classList.add("hidden");
           document.getElementById("confirm-btn").className =
             "btn-success flex-1";
@@ -299,10 +303,10 @@
           document.getElementById("action-title").textContent =
             "Reject Borrow Request";
           document.getElementById("borrow-details").innerHTML = `
-                    <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
-                    <p><strong>Items:</strong> ${borrow.total_items} items</p>
-                    <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
-                `;
+                      <p><strong>Borrower:</strong> ${borrow.borrower?.name}</p>
+                      <p><strong>Items:</strong> ${borrow.total_items} items</p>
+                      <p><strong>Due Date:</strong> ${formatDate(borrow.due_date)}</p>
+                  `;
           document.getElementById("reject-reason").classList.remove("hidden");
           document.getElementById("confirm-btn").className =
             "btn-danger flex-1";

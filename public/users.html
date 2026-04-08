@@ -67,7 +67,7 @@
       </div>
     </main>
 
-    <!-- Modal -->
+    <!-- Add/Edit User Modal -->
     <div
       id="user-modal"
       class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4"
@@ -130,6 +130,50 @@
       </div>
     </div>
 
+    <!-- Delete Confirmation Card -->
+    <div
+      id="delete-modal"
+      class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    >
+      <div
+        class="bg-white rounded-2xl shadow-xl w-[320px] p-6 text-center mx-auto"
+      >
+        <!-- Icon -->
+        <div
+          class="mx-auto mb-4 flex items-center justify-center w-14 h-14 rounded-full bg-red-50"
+        >
+          <i class="fas fa-trash text-red-500 text-xl"></i>
+        </div>
+
+        <!-- Title -->
+        <h3 class="text-lg font-semibold text-gray-900 mb-1">Delete User</h3>
+
+        <!-- Message -->
+        <p
+          id="delete-message"
+          class="text-sm text-gray-500 mb-6 leading-relaxed"
+        >
+          Are you sure you want to delete this user?
+        </p>
+
+        <!-- Actions -->
+        <div class="flex gap-3">
+          <button
+            onclick="closeDeleteModal()"
+            class="flex-1 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="confirmDelete()"
+            class="flex-1 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       import { Navbar } from "../src/components/Navbar.js";
       import { Sidebar } from "../src/components/Sidebar.js";
@@ -154,6 +198,8 @@
 
       let currentPage = 1;
       let editingId = null;
+      let deleteUserId = null;
+      let deleteUserName = null;
 
       // Load users
       async function loadUsers(page = 1) {
@@ -211,7 +257,7 @@
                     <button onclick="editUser('${user.id}')" class="text-blue-600 hover:text-blue-800 mr-3">
                         <i class="fas fa-edit"></i>
                     </button>
-                    <button onclick="deleteUser('${user.id}', '${user.name}')" class="text-red-600 hover:text-red-800">
+                    <button onclick="openDeleteModal('${user.id}', '${user.name}')" class="text-red-600 hover:text-red-800">
                         <i class="fas fa-trash"></i>
                     </button>
                 `,
@@ -243,6 +289,37 @@
       window.closeModal = () => {
         document.getElementById("user-modal").classList.add("hidden");
         editingId = null;
+      };
+
+      // Delete Modal Functions
+      window.openDeleteModal = (id, name) => {
+        deleteUserId = id;
+        deleteUserName = name;
+        const modal = document.getElementById("delete-modal");
+        const message = document.getElementById("delete-message");
+
+        message.innerHTML = `Are you sure you want to delete <span class="font-semibold text-gray-900">"${name}"</span>? All associated data will be permanently removed.`;
+        modal.classList.remove("hidden");
+      };
+
+      window.closeDeleteModal = () => {
+        document.getElementById("delete-modal").classList.add("hidden");
+        deleteUserId = null;
+        deleteUserName = null;
+      };
+
+      window.confirmDelete = async () => {
+        if (!deleteUserId) return;
+
+        try {
+          await usersApi.delete(deleteUserId);
+          toast.success("User deleted successfully");
+          closeDeleteModal();
+          loadUsers(currentPage);
+        } catch (error) {
+          toast.error(error.message || "Failed to delete user");
+          closeDeleteModal();
+        }
       };
 
       async function loadUserData(id) {
@@ -302,21 +379,6 @@
         openModal(id);
       };
 
-      // Delete user
-      window.deleteUser = async (id, name) => {
-        if (!confirm(`Are you sure you want to delete user "${name}"?`)) {
-          return;
-        }
-
-        try {
-          await usersApi.delete(id);
-          toast.success("User deleted successfully");
-          loadUsers(currentPage);
-        } catch (error) {
-          toast.error(error.message || "Failed to delete user");
-        }
-      };
-
       // Search debounce
       let searchTimeout;
       document.getElementById("search-input").addEventListener("input", () => {
@@ -327,6 +389,13 @@
       document
         .getElementById("role-filter")
         .addEventListener("change", () => loadUsers(1));
+
+      // Close modals when clicking outside
+      document.getElementById("delete-modal").addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) {
+          closeDeleteModal();
+        }
+      });
 
       // Initial load
       loadUsers();

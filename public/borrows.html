@@ -22,6 +22,15 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div id="admin-borrows-section" class="mt-6 hidden">
+            <div class="card">
+              <h2 class="text-lg font-semibold mb-4">All Borrow Requests</h2>
+
+              <div id="borrows-table" class="overflow-x-auto">
+                <p class="text-gray-500 text-center py-4">Loading...</p>
+              </div>
+            </div>
+          </div>
           <!-- Left: Borrow Form -->
           <div class="lg:col-span-2 space-y-6">
             <!-- Step 1: Set Due Date -->
@@ -36,6 +45,16 @@
                     class="form-input"
                     required
                     min=""
+                  />
+                </div>
+                <div class="w-32">
+                  <label class="form-label">Time</label>
+                  <input
+                    type="time"
+                    id="due-time"
+                    class="form-input"
+                    required
+                    value="17:00"
                   />
                 </div>
                 <div class="flex items-end">
@@ -117,7 +136,12 @@
     <script type="module">
       import { Navbar } from "../src/components/Navbar.js";
       import { Sidebar } from "../src/components/Sidebar.js";
-      import { checkAuth, isBorrower } from "../src/utils/auth.js";
+      import {
+        checkAuth,
+        isBorrower,
+        isAdmin,
+        isStaff,
+      } from "../src/utils/auth.js";
       import { borrowsApi } from "../src/api/borrows.js";
       import { toolsApi } from "../src/api/tools.js";
       import { toast } from "../src/components/Toast.js";
@@ -134,6 +158,13 @@
       document.getElementById("sidebar-container").innerHTML = Sidebar.render();
       Navbar.init();
       Sidebar.init();
+      if (isAdmin() || isStaff()) {
+        document
+          .getElementById("admin-borrows-section")
+          .classList.remove("hidden");
+
+        loadAllBorrows();
+      }
 
       // Set min date to today
       const today = new Date().toISOString().split("T")[0];
@@ -166,9 +197,60 @@
           toast.error("Failed to load tools");
         }
       }
+      async function loadAllBorrows() {
+        try {
+          const response = await borrowsApi.getAll({
+            page: 1,
+            limit: 10,
+          });
+
+          const borrows = response.result?.data || [];
+          renderBorrowsTable(borrows);
+        } catch (error) {
+          document.getElementById("borrows-table").innerHTML =
+            '<p class="text-red-500 text-center py-4">Failed to load borrows</p>';
+        }
+      }
+      function renderBorrowsTable(data) {
+        const container = document.getElementById("borrows-table");
+
+        if (!data.length) {
+          container.innerHTML =
+            '<p class="text-gray-500 text-center py-4">No borrows found</p>';
+          return;
+        }
+
+        container.innerHTML = `
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="bg-gray-100 text-left">
+          <th class="p-3">ID</th>
+          <th class="p-3">Borrower</th>
+          <th class="p-3">Status</th>
+          <th class="p-3">Due Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data
+          .map(
+            (b) => `
+          <tr class="border-b hover:bg-gray-50">
+            <td class="p-3">#${b.id.slice(0, 6)}</td>
+            <td class="p-3">${b.borrower?.name || "-"}</td>
+            <td class="p-3">${b.status}</td>
+            <td class="p-3">${formatDate(b.due_date)}</td>
+          </tr>
+        `,
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+      }
 
       window.createBorrow = async () => {
         const dueDate = document.getElementById("due-date").value;
+        const dueTime = document.getElementById("due-time").value;
 
         if (!dueDate) {
           toast.error("Please select a due date");
@@ -181,8 +263,12 @@
 
         try {
           const formattedDate = new Date(dueDate).toISOString();
+          const dateTimeLocal = `${dueDate}T${dueTime}:00`;
+          const formattedDateTime = new Date(dateTimeLocal).toISOString();
 
-          const response = await borrowsApi.create({ due_date: formattedDate });
+          const response = await borrowsApi.create({
+            due_date: formattedDateTime,
+          });
 
           if (response.code === 201) {
             currentBorrowId = response.result.id;
@@ -196,6 +282,8 @@
               .getElementById("submit-section")
               .classList.remove("hidden");
             document.getElementById("due-date").disabled = true;
+            document.getElementById("due-time").disabled = true;
+
             btn.classList.add("hidden");
 
             updateSummary();
@@ -323,6 +411,10 @@
         }
 
         const dueDate = document.getElementById("due-date").value;
+        const dueTime = document.getElementById("due-time").value;
+
+        const formattedDateTime =
+          dueDate && dueTime ? `${formatDate(dueDate)}, ${dueTime} WIB` : "-";
 
         container.innerHTML = `
                 <div class="flex justify-between">
@@ -333,6 +425,10 @@
                     <span class="text-gray-600">Due Date:</span>
                     <span class="font-medium">${formatDate(dueDate)}</span>
                 </div>
+                 <div class="flex justify-between">
+                     <span class="text-gray-600">Due Date:</span>
+                     <span class="font-medium">${formattedDateTime}</span>
+                     </div>
                 <div class="flex justify-between">
                     <span class="text-gray-600">Total Items:</span>
                     <span class="font-medium">${currentItems.length}</span>
@@ -361,7 +457,11 @@
           if (response.code === 200) {
             toast.success("Borrow request submitted successfully!");
             setTimeout(() => {
-              window.location.href = "./my-borrows.html";
+              if (isBorrower()) {
+                window.location.href = "./my-borrows.html";
+              } else if (isAdmin() || isStaff()) {
+                window.location.href = "./borrows.html"; // atau halaman admin list
+              }
             }, 1500);
           } else {
             toast.error(response.message || "Failed to submit");

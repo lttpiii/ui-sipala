@@ -15,6 +15,8 @@ export const authApi = {
       setToken(data.result.access_token);
       setRefreshToken(data.result.refresh_token);
       setUser(data.result.user);
+      const { startTokenRefreshInterval } = await import("../utils/auth.js");
+      startTokenRefreshInterval();
     }
 
     return data;
